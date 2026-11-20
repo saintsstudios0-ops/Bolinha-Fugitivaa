@@ -1,0 +1,1765 @@
+```html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>BOLINHA FUGITIVA 3D</title>
+  <!-- Tailwind CSS para UI moderna e responsiva -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js r128 via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Fonte divertida estilo Arcade -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      touch-action: none;
+      font-family: 'Fredoka', sans-serif;
+      background: #1a103c;
+    }
+
+    #game-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      z-index: 1;
+    }
+
+    /* Botões estilo arcade 3D */
+    .btn-arcade {
+      transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.15s ease;
+      box-shadow: 0 6px 0 rgba(0, 0, 0, 0.28), 0 10px 20px rgba(0, 0, 0, 0.25);
+    }
+    .btn-arcade:active {
+      transform: translateY(4px) scale(0.97);
+      box-shadow: 0 2px 0 rgba(0, 0, 0, 0.28), 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Animação de pulso suave no título */
+    @keyframes floatTitle {
+      0%, 100% { transform: translateY(0px) rotate(-1.5deg); }
+      50% { transform: translateY(-7px) rotate(1.5deg); }
+    }
+    .title-float {
+      animation: floatTitle 3s ease-in-out infinite;
+    }
+
+    /* Barra de rolagem estilizada para a loja de 20 bolinhas */
+    .skins-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+    .skins-scroll::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+    }
+    .skins-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.35);
+      border-radius: 999px;
+    }
+
+    /* Pop-up de pontuação flutuante */
+    @keyframes popUpFade {
+      0% { opacity: 1; transform: translate(-50%, 0) scale(0.7); }
+      40% { opacity: 1; transform: translate(-50%, -26px) scale(1.15); }
+      100% { opacity: 0; transform: translate(-50%, -52px) scale(0.95); }
+    }
+    .floating-badge {
+      position: fixed;
+      pointer-events: none;
+      z-index: 30;
+      font-weight: 700;
+      text-shadow: 0 3px 0 rgba(0,0,0,0.45);
+      animation: popUpFade 0.85s ease-out forwards;
+    }
+  </style>
+</head>
+<body>
+  <!-- Canvas 3D Principal -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- HUD Superior (Visível durante o jogo e menus) -->
+  <div id="top-hud" class="fixed top-0 left-0 right-0 z-20 p-3 sm:p-4 flex items-start justify-between pointer-events-none">
+    <!-- Lado Esquerdo: Pontuação e Combo (durante partida) ou Recorde (no menu) -->
+    <div id="hud-left-menu" class="flex flex-col gap-1.5 pointer-events-auto">
+      <div class="bg-slate-900/75 backdrop-blur-md border-2 border-white/20 rounded-2xl px-3.5 py-1.5 flex items-center gap-2 shadow-lg">
+        <span class="text-amber-400 text-lg">🏆</span>
+        <div>
+          <div class="text-[10px] uppercase tracking-wider text-slate-300 leading-none">Recorde</div>
+          <div id="menu-highscore" class="text-white font-bold text-base sm:text-lg leading-tight">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="hud-left-playing" class="hidden flex-col gap-1.5">
+      <div class="bg-slate-900/75 backdrop-blur-md border-2 border-white/25 rounded-2xl px-4 py-1.5 shadow-lg">
+        <div class="text-[10px] uppercase tracking-wider text-cyan-300 font-semibold leading-none">Pontos</div>
+        <div id="hud-score" class="text-white font-bold text-2xl sm:text-3xl leading-tight">0</div>
+      </div>
+
+      <!-- Indicador de Combo -->
+      <div id="combo-container" class="hidden bg-gradient-to-r from-fuchsia-600/90 to-amber-500/90 backdrop-blur-md border-2 border-white/40 rounded-2xl px-3 py-1 shadow-lg">
+        <div class="flex items-center justify-between gap-2">
+          <span id="hud-combo-text" class="text-white font-bold text-sm tracking-wide">COMBO x2</span>
+          <span class="text-xs">🔥</span>
+        </div>
+        <div class="w-full h-1.5 bg-black/30 rounded-full overflow-hidden mt-1">
+          <div id="hud-combo-bar" class="h-full bg-yellow-200 rounded-full transition-all duration-75" style="width: 100%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Lado Direito: Moedas + Botão de Som -->
+    <div class="flex items-center gap-2 pointer-events-auto">
+      <div class="bg-slate-900/75 backdrop-blur-md border-2 border-amber-400/40 rounded-2xl px-3.5 py-1.5 flex items-center gap-2 shadow-lg">
+        <span class="inline-block w-5 h-5 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 border border-yellow-100 shadow-inner flex items-center justify-center text-[11px] font-bold text-amber-950">$</span>
+        <span id="hud-coins" class="text-amber-300 font-bold text-base sm:text-lg">0</span>
+      </div>
+
+      <button id="btn-sound" aria-label="Alternar Som" class="btn-arcade bg-slate-900/80 hover:bg-slate-800 border-2 border-white/25 text-white w-11 h-11 rounded-2xl flex items-center justify-center text-xl">
+        🔊
+      </button>
+    </div>
+  </div>
+
+  <!-- TELA 1: MENU INICIAL -->
+  <div id="screen-menu" class="fixed inset-0 z-10 flex flex-col items-center justify-between px-5 pt-20 pb-8 pointer-events-none">
+    <!-- Título do Jogo -->
+    <div class="text-center mt-2 sm:mt-4 title-float">
+      <div class="inline-block bg-white/15 backdrop-blur-md border border-white/30 text-yellow-200 text-xs sm:text-sm font-bold px-3.5 py-1 rounded-full mb-2 tracking-wider uppercase shadow">
+        Arcade 3D • 3 Faixas
+      </div>
+      <h1 class="text-4xl sm:text-6xl font-bold text-white tracking-tight drop-shadow-[0_6px_0_rgba(15,23,42,0.85)] leading-none">
+        BOLINHA<br>
+        <span class="bg-gradient-to-r from-yellow-300 via-amber-400 to-rose-400 bg-clip-text text-transparent">FUGITIVA</span>
+      </h1>
+    </div>
+
+    <!-- Espaço central deixa a bolinha 3D animada visível na pista -->
+    <div class="flex-1"></div>
+
+    <!-- Guia rápido de controles + Botões Principais -->
+    <div class="w-full max-w-sm flex flex-col gap-3 pointer-events-auto">
+      <!-- Dica de controles -->
+      <div class="bg-slate-950/70 backdrop-blur-md border border-white/20 rounded-2xl p-3 text-white text-xs sm:text-sm grid grid-cols-2 gap-2 shadow-xl">
+        <div class="flex items-center gap-2 bg-white/10 rounded-xl p-2">
+          <span class="text-xl">👆</span>
+          <div>
+            <div class="font-bold text-cyan-300">TOCAR</div>
+            <div class="text-[11px] text-slate-200">Pular obstáculos</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 bg-white/10 rounded-xl p-2">
+          <span class="text-xl">👈👉</span>
+          <div>
+            <div class="font-bold text-amber-300">DESLIZAR</div>
+            <div class="text-[11px] text-slate-200">Mudar de faixa</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botão JOGAR -->
+      <button id="btn-play" class="btn-arcade w-full py-4 rounded-3xl bg-gradient-to-b from-emerald-400 to-green-600 border-2 border-emerald-200 text-white font-bold text-2xl sm:text-3xl tracking-wide flex items-center justify-center gap-3">
+        <span>▶</span> JOGAR
+      </button>
+
+      <!-- Botão BOLINHAS (20 Skins) -->
+      <button id="btn-open-skins" class="btn-arcade w-full py-3.5 rounded-3xl bg-gradient-to-b from-indigo-500 to-purple-700 border-2 border-indigo-200/70 text-white font-bold text-lg sm:text-xl flex items-center justify-center gap-2.5">
+        <span>🎨</span> BOLINHAS (<span id="unlocked-count">1</span>/20)
+      </button>
+    </div>
+  </div>
+
+  <!-- TELA 2: LOJA / GARAGEM DE 20 BOLINHAS -->
+  <div id="screen-skins" class="hidden fixed inset-0 z-30 bg-slate-950/85 backdrop-blur-lg flex flex-col items-center justify-between p-4 sm:p-6">
+    <div class="w-full max-w-lg flex items-center justify-between pt-1">
+      <div>
+        <h2 class="text-2xl sm:text-3xl font-bold text-white">20 Bolinhas</h2>
+        <p class="text-xs sm:text-sm text-slate-300">Colete moedas na pista para desbloquear todas!</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="bg-slate-900 border border-amber-400/50 rounded-2xl px-3 py-1.5 flex items-center gap-1.5">
+          <span class="inline-block w-4 h-4 rounded-full bg-amber-400 text-[10px] font-bold text-amber-950 flex items-center justify-center">$</span>
+          <span id="shop-coins" class="text-amber-300 font-bold text-base">0</span>
+        </div>
+        <button id="btn-close-skins" class="btn-arcade bg-rose-500 hover:bg-rose-600 border-2 border-rose-200 text-white font-bold px-4 py-2 rounded-2xl text-sm">
+          VOLTAR
+        </button>
+      </div>
+    </div>
+
+    <!-- Grade com as 20 bolinhas -->
+    <div id="skins-grid" class="skins-scroll w-full max-w-lg flex-1 my-4 overflow-y-auto grid grid-cols-2 sm:grid-cols-4 gap-3 pr-1">
+      <!-- Preenchido via JS -->
+    </div>
+
+    <!-- Mensagem de feedback da loja -->
+    <div id="shop-feedback" class="h-6 text-center text-sm font-bold text-amber-300"></div>
+  </div>
+
+  <!-- TELA 3: GAME OVER -->
+  <div id="screen-gameover" class="hidden fixed inset-0 z-30 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-5">
+    <div class="w-full max-w-sm bg-gradient-to-b from-slate-800 to-slate-900 border-2 border-white/25 rounded-3xl p-6 text-center shadow-2xl">
+      <div id="gameover-reason" class="inline-block bg-rose-500/20 border border-rose-400/40 text-rose-300 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full mb-2">
+        Você bateu!
+      </div>
+      <h2 class="text-3xl sm:text-4xl font-bold text-white mb-1">FIM DE JOGO</h2>
+
+      <div id="new-record-badge" class="hidden inline-block bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 font-bold text-xs px-3 py-1 rounded-full mb-3 shadow">
+        🎉 NOVO RECORDE! 🎉
+      </div>
+
+      <!-- Estatísticas da Partida -->
+      <div class="grid grid-cols-2 gap-2.5 my-4 text-left">
+        <div class="bg-slate-950/60 border border-white/10 rounded-2xl p-3">
+          <div class="text-[11px] text-slate-400 uppercase">Pontuação</div>
+          <div id="go-score" class="text-2xl font-bold text-white">0</div>
+        </div>
+        <div class="bg-slate-950/60 border border-white/10 rounded-2xl p-3">
+          <div class="text-[11px] text-slate-400 uppercase">Recorde</div>
+          <div id="go-highscore" class="text-2xl font-bold text-amber-400">0</div>
+        </div>
+        <div class="bg-slate-950/60 border border-white/10 rounded-2xl p-3">
+          <div class="text-[11px] text-slate-400 uppercase">Moedas Ganhas</div>
+          <div id="go-coins" class="text-xl font-bold text-yellow-300">+0</div>
+        </div>
+        <div class="bg-slate-950/60 border border-white/10 rounded-2xl p-3">
+          <div class="text-[11px] text-slate-400 uppercase">Melhor Combo</div>
+          <div id="go-combo" class="text-xl font-bold text-fuchsia-400">x1</div>
+        </div>
+      </div>
+
+      <!-- Botões de Ação -->
+      <div class="flex flex-col gap-2.5 mt-2">
+        <button id="btn-restart" class="btn-arcade w-full py-3.5 rounded-2xl bg-gradient-to-b from-emerald-400 to-green-600 border-2 border-emerald-200 text-white font-bold text-xl flex items-center justify-center gap-2">
+          <span>↻</span> JOGAR NOVAMENTE
+        </button>
+        <button id="btn-go-menu" class="btn-arcade w-full py-3 rounded-2xl bg-slate-700 hover:bg-slate-600 border border-white/20 text-white font-bold text-base">
+          MENU INICIAL
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * BOLINHA FUGITIVA 3D
+     * Jogo arcade 3D completo com 3 faixas (Esquerda, Centro, Direita) + Pulo,
+     * obstáculos variados, buracos na pista, coletáveis, combos, Web Audio API e 20 skins.
+     */
+
+    // =========================================================================
+    // 1. DEFINIÇÃO DAS 20 BOLINHAS DESBLOQUEÁVEIS
+    // =========================================================================
+    const SKINS_DATA = [
+      { id: 0,  name: "Clássica",      price: 0,    color: "#ff3b5c", accent: "#ff8fa3", roughness: 0.25, metalness: 0.1, accessory: "none",    emissive: "#000000" },
+      { id: 1,  name: "Solar",         price: 25,   color: "#ffbe0b", accent: "#fb5607", roughness: 0.2,  metalness: 0.1, accessory: "none",    emissive: "#331a00" },
+      { id: 2,  name: "Oceano",        price: 50,   color: "#00bbf9", accent: "#90e0ef", roughness: 0.15, metalness: 0.2, accessory: "none",    emissive: "#001f33" },
+      { id: 3,  name: "Esmeralda",     price: 80,   color: "#06d6a0", accent: "#b5ffe1", roughness: 0.12, metalness: 0.35,accessory: "crown_sm",emissive: "#00291d" },
+      { id: 4,  name: "Uva Neon",      price: 110,  color: "#9b5de5", accent: "#f15bb5", roughness: 0.2,  metalness: 0.2, accessory: "antenna", emissive: "#240046" },
+      { id: 5,  name: "Melancia",      price: 150,  color: "#2ec4b6", accent: "#ff3366", roughness: 0.3,  metalness: 0.05,accessory: "leaf",    emissive: "#000000" },
+      { id: 6,  name: "Basquete",      price: 190,  color: "#f77f00", accent: "#2b2d42", roughness: 0.55, metalness: 0.0, accessory: "band",    emissive: "#000000" },
+      { id: 7,  name: "Ouro Puro",     price: 240,  color: "#ffd700", accent: "#fff3b0", roughness: 0.12, metalness: 0.85,accessory: "none",    emissive: "#332600" },
+      { id: 8,  name: "Gelo Ártico",   price: 290,  color: "#caf0f8", accent: "#48cae4", roughness: 0.08, metalness: 0.3, accessory: "horns",   emissive: "#002b36" },
+      { id: 9,  name: "Magma",         price: 350,  color: "#d00000", accent: "#ffba08", roughness: 0.4,  metalness: 0.1, accessory: "horns",   emissive: "#590d00" },
+      { id: 10, name: "Abelha",        price: 410,  color: "#ffd60a", accent: "#1d1e2c", roughness: 0.25, metalness: 0.1, accessory: "antenna", emissive: "#000000" },
+      { id: 11, name: "Ninja",         price: 480,  color: "#1e293b", accent: "#ef4444", roughness: 0.35, metalness: 0.2, accessory: "band",    emissive: "#000000" },
+      { id: 12, name: "Chiclete",      price: 550,  color: "#ff70a6", accent: "#ff9770", roughness: 0.15, metalness: 0.05,accessory: "halo",    emissive: "#33001b" },
+      { id: 13, name: "Robô X9",       price: 630,  color: "#94a3b8", accent: "#38bdf8", roughness: 0.15, metalness: 0.9, accessory: "antenna", emissive: "#082f49" },
+      { id: 14, name: "Fantasma",      price: 720,  color: "#f8fafc", accent: "#a5b4fc", roughness: 0.2,  metalness: 0.1, accessory: "halo",    emissive: "#1e1b4b" },
+      { id: 15, name: "Zumbi",         price: 820,  color: "#84cc16", accent: "#a855f7", roughness: 0.45, metalness: 0.05,accessory: "leaf",    emissive: "#1a2e05" },
+      { id: 16, name: "Cyber Neon",    price: 930,  color: "#00f5d4", accent: "#ff007f", roughness: 0.1,  metalness: 0.5, accessory: "visor",   emissive: "#003830" },
+      { id: 17, name: "Galáxia",       price: 1050, color: "#3a0ca3", accent: "#4cc9f0", roughness: 0.15, metalness: 0.6, accessory: "halo",    emissive: "#240046" },
+      { id: 18, name: "Dragão",        price: 1200, color: "#10b981", accent: "#f59e0b", roughness: 0.25, metalness: 0.4, accessory: "horns",   emissive: "#064e3b" },
+      { id: 19, name: "Rei Supremo",   price: 1500, color: "#f59e0b", accent: "#ef4444", roughness: 0.1,  metalness: 0.9, accessory: "crown",   emissive: "#451a03" }
+    ];
+
+    // =========================================================================
+    // 2. PERSISTÊNCIA LOCAL (RECORDE, MOEDAS, SKINS)
+    // =========================================================================
+    const STORAGE_KEY = "bolinha_fugitiva_save_v1";
+    let saveData = {
+      highScore: 0,
+      coins: 0,
+      unlockedSkins: [0],
+      selectedSkin: 0,
+      soundEnabled: true
+    };
+
+    function loadSaveData() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          saveData = { ...saveData, ...parsed };
+          if (!Array.isArray(saveData.unlockedSkins) || saveData.unlockedSkins.length === 0) {
+            saveData.unlockedSkins = [0];
+          }
+        }
+      } catch (e) {
+        console.warn("Não foi possível carregar o progresso salvo:", e);
+      }
+    }
+
+    function persistSaveData() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
+      } catch (e) {
+        console.warn("Não foi possível salvar progresso:", e);
+      }
+    }
+
+    loadSaveData();
+
+    // =========================================================================
+    // 3. SISTEMA DE ÁUDIO SINTÉTICO (WEB AUDIO API)
+    // =========================================================================
+    class SoundManager {
+      constructor() {
+        this.ctx = null;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            this.ctx = new AudioCtx();
+          }
+        }
+        if (this.ctx && this.ctx.state === "suspended") {
+          this.ctx.resume();
+        }
+      }
+
+      playTone(freqStart, freqEnd, duration, type = "sine", volume = 0.18, delay = 0) {
+        if (!saveData.soundEnabled) return;
+        this.init();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime + delay;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = type;
+        osc.frequency.setValueAtTime(freqStart, now);
+        if (freqEnd !== freqStart) {
+          osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), now + duration);
+        }
+
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(volume, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + duration + 0.02);
+      }
+
+      playJump() {
+        this.playTone(260, 620, 0.18, "sine", 0.22);
+        this.playTone(390, 780, 0.14, "triangle", 0.1);
+      }
+
+      playLaneSwitch() {
+        this.playTone(320, 480, 0.09, "triangle", 0.14);
+      }
+
+      playCoin() {
+        this.playTone(987.77, 987.77, 0.07, "sine", 0.16, 0);
+        this.playTone(1318.51, 1318.51, 0.14, "sine", 0.16, 0.06);
+      }
+
+      playStar(combo = 1) {
+        const pitchBoost = Math.min(combo * 35, 350);
+        this.playTone(587 + pitchBoost, 880 + pitchBoost, 0.1, "triangle", 0.18, 0);
+        this.playTone(880 + pitchBoost, 1174 + pitchBoost, 0.16, "sine", 0.2, 0.07);
+      }
+
+      playGameOver() {
+        this.playTone(340, 140, 0.22, "sawtooth", 0.18, 0);
+        this.playTone(220, 75, 0.35, "sawtooth", 0.2, 0.16);
+      }
+
+      playButton() {
+        this.playTone(520, 660, 0.08, "sine", 0.14);
+      }
+
+      playUnlock() {
+        this.playTone(523.25, 523.25, 0.1, "triangle", 0.2, 0);
+        this.playTone(659.25, 659.25, 0.1, "triangle", 0.2, 0.09);
+        this.playTone(783.99, 783.99, 0.1, "triangle", 0.2, 0.18);
+        this.playTone(1046.5, 1046.5, 0.25, "sine", 0.22, 0.27);
+      }
+    }
+
+    const sound = new SoundManager();
+
+    // =========================================================================
+    // 4. CONFIGURAÇÕES DO MUNDO 3D E FÍSICA DAS 3 FAIXAS
+    // =========================================================================
+    const LANE_WIDTH = 2.5; // Distância entre faixas (-2.5, 0, +2.5)
+    const LANES_X = [-LANE_WIDTH, 0, LANE_WIDTH]; // Índice 0 = Esquerda, 1 = Centro, 2 = Direita
+    const TRACK_WIDTH = LANE_WIDTH * 3 + 0.9;
+    const BALL_RADIUS = 0.62;
+
+    // Física do pulo
+    const GRAVITY = -42.0;
+    const JUMP_VELOCITY = 15.8;
+
+    // Paletas dinâmicas do cenário conforme o jogador avança
+    const WORLD_THEMES = [
+      { sky: 0x3b82f6, fog: 0x60a5fa, trackA: 0x1e293b, trackB: 0x334155, rail: 0x38bdf8 }, // Dia vibrante
+      { sky: 0x7c3aed, fog: 0xa855f7, trackA: 0x1e1b4b, trackB: 0x312e81, rail: 0xf472b6 }, // Crepúsculo Neon
+      { sky: 0xea580c, fog: 0xfb923c, trackA: 0x292524, trackB: 0x44403c, rail: 0xfacc15 }, // Pôr do Sol Dourado
+      { sky: 0x0d9488, fog: 0x2dd4bf, trackA: 0x0f172a, trackB: 0x1e293b, rail: 0x34d399 }  // Paraíso Esmeralda
+    ];
+
+    // =========================================================================
+    // 5. ESTADO DO JOGO
+    // =========================================================================
+    const state = {
+      mode: "MENU", // "MENU", "PLAYING", "FALLING", "GAMEOVER"
+      currentLane: 1, // 0 = Esquerda, 1 = Centro, 2 = Direita
+      ballX: 0,
+      ballY: BALL_RADIUS,
+      ballZ: 0,
+      velY: 0,
+      isGrounded: true,
+      jumpBufferTimer: 0,
+
+      // Animação da bolinha
+      squashX: 1,
+      squashY: 1,
+      squashZ: 1,
+      rollAngle: 0,
+      blinkTimer: 2.5,
+      isBlinking: false,
+
+      // Progressão
+      speed: 20,
+      baseSpeed: 20,
+      maxSpeed: 46,
+      distance: 0,
+      score: 0,
+      runCoins: 0,
+      combo: 1,
+      maxCombo: 1,
+      comboTimer: 0,
+      comboDuration: 4.5,
+
+      // Geração de pista e obstáculos
+      nextTileZ: 20,
+      nextPatternZ: -26,
+      themeIndex: 0
+    };
+
+    // =========================================================================
+    // 6. INICIALIZAÇÃO THREE.JS (CENA, CÂMERA, LUZES)
+    // =========================================================================
+    const canvas = document.getElementById("game-canvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(WORLD_THEMES[0].sky);
+    scene.fog = new THREE.Fog(WORLD_THEMES[0].fog, 32, 98);
+
+    const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 130);
+    camera.position.set(0, 5.4, 8.8);
+    camera.lookAt(0, 1.2, -8);
+
+    // Iluminação
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x334155, 0.95);
+    hemiLight.position.set(0, 30, 0);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(12, 24, 14);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    dirLight.shadow.camera.near = 2;
+    dirLight.shadow.camera.far = 70;
+    const d = 18;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    scene.add(dirLight);
+
+    // =========================================================================
+    // 7. CONSTRUÇÃO DA BOLINHA PROTAGONISTA 3D COM PERSONALIDADE
+    // =========================================================================
+    const playerGroup = new THREE.Group();
+    scene.add(playerGroup);
+
+    // Grupo interno que recebe squash & stretch e rotação
+    const ballVisualGroup = new THREE.Group();
+    playerGroup.add(ballVisualGroup);
+
+    // Esfera principal da bolinha
+    const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 32);
+    const ballMat = new THREE.MeshStandardMaterial({
+      color: 0xff3b5c,
+      roughness: 0.25,
+      metalness: 0.1
+    });
+    const ballMesh = new THREE.Mesh(ballGeo, ballMat);
+    ballMesh.castShadow = true;
+    ballMesh.receiveShadow = true;
+    ballVisualGroup.add(ballMesh);
+
+    // Faixa decorativa / detalhe de skin
+    const stripeGeo = new THREE.TorusGeometry(BALL_RADIUS * 0.985, 0.055, 12, 36);
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xff8fa3, roughness: 0.3 });
+    const stripeMesh = new THREE.Mesh(stripeGeo, stripeMat);
+    stripeMesh.rotation.y = Math.PI / 2;
+    ballVisualGroup.add(stripeMesh);
+
+    // Grupo do rosto (olhos expressivos voltados para frente/câmera ou direção)
+    const faceGroup = new THREE.Group();
+    ballVisualGroup.add(faceGroup);
+
+    // Olhos 3D (esclera + pupila + brilho)
+    function createEye(xOffset) {
+      const eyeContainer = new THREE.Group();
+      eyeContainer.position.set(xOffset, 0.16, -BALL_RADIUS * 0.86);
+
+      const whiteGeo = new THREE.SphereGeometry(0.17, 16, 16);
+      const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const whiteMesh = new THREE.Mesh(whiteGeo, whiteMat);
+      whiteMesh.scale.set(0.95, 1.15, 0.55);
+      eyeContainer.add(whiteMesh);
+
+      const pupilGeo = new THREE.SphereGeometry(0.085, 12, 12);
+      const pupilMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+      const pupilMesh = new THREE.Mesh(pupilGeo, pupilMat);
+      pupilMesh.position.set(0, 0, -0.075);
+      pupilMesh.scale.set(1, 1.15, 0.6);
+      eyeContainer.add(pupilMesh);
+
+      const glintGeo = new THREE.SphereGeometry(0.03, 8, 8);
+      const glintMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const glintMesh = new THREE.Mesh(glintGeo, glintMat);
+      glintMesh.position.set(-0.03, 0.035, -0.115);
+      eyeContainer.add(glintMesh);
+
+      return { container: eyeContainer, pupil: pupilMesh };
+    }
+
+    const leftEye = createEye(-0.21);
+    const rightEye = createEye(0.21);
+    faceGroup.add(leftEye.container);
+    faceGroup.add(rightEye.container);
+
+    // Sobrancelhas expressivas
+    const browGeo = new THREE.BoxGeometry(0.22, 0.045, 0.05);
+    const browMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    const leftBrow = new THREE.Mesh(browGeo, browMat);
+    leftBrow.position.set(-0.22, 0.37, -BALL_RADIUS * 0.85);
+    leftBrow.rotation.z = -0.18;
+    const rightBrow = new THREE.Mesh(browGeo, browMat);
+    rightBrow.position.set(0.22, 0.37, -BALL_RADIUS * 0.85);
+    rightBrow.rotation.z = 0.18;
+    faceGroup.add(leftBrow, rightBrow);
+
+    // Acessórios das Skins (Coroa, Chifres, Auréola, Antena, Folha, Visor)
+    const accessoryGroup = new THREE.Group();
+    ballVisualGroup.add(accessoryGroup);
+
+    function applySkinToPlayer(skinId) {
+      const skin = SKINS_DATA.find(s => s.id === skinId) || SKINS_DATA[0];
+      ballMat.color.set(skin.color);
+      ballMat.roughness = skin.roughness;
+      ballMat.metalness = skin.metalness;
+      ballMat.emissive.set(skin.emissive);
+      stripeMat.color.set(skin.accent);
+
+      // Limpar acessório anterior
+      while (accessoryGroup.children.length > 0) {
+        accessoryGroup.remove(accessoryGroup.children[0]);
+      }
+
+      const accMat = new THREE.MeshStandardMaterial({
+        color: skin.accent,
+        roughness: 0.25,
+        metalness: 0.4
+      });
+
+      if (skin.accessory === "crown" || skin.accessory === "crown_sm") {
+        const scale = skin.accessory === "crown" ? 1 : 0.72;
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.28 * scale, 0.22 * scale, 0.24 * scale, 6), accMat);
+        crown.position.set(0, BALL_RADIUS + 0.08 * scale, 0);
+        accessoryGroup.add(crown);
+      } else if (skin.accessory === "halo") {
+        const halo = new THREE.Mesh(
+          new THREE.TorusGeometry(0.34, 0.04, 10, 24),
+          new THREE.MeshBasicMaterial({ color: 0xfef08a })
+        );
+        halo.rotation.x = Math.PI / 2;
+        halo.position.set(0, BALL_RADIUS + 0.22, 0);
+        accessoryGroup.add(halo);
+      } else if (skin.accessory === "antenna") {
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8), accMat);
+        stem.position.set(0, BALL_RADIUS + 0.12, 0);
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), new THREE.MeshBasicMaterial({ color: skin.accent }));
+        tip.position.set(0, BALL_RADIUS + 0.28, 0);
+        accessoryGroup.add(stem, tip);
+      } else if (skin.accessory === "horns") {
+        const hornGeo = new THREE.ConeGeometry(0.11, 0.32, 10);
+        const h1 = new THREE.Mesh(hornGeo, accMat);
+        h1.position.set(-0.32, BALL_RADIUS - 0.05, 0);
+        h1.rotation.z = 0.45;
+        const h2 = new THREE.Mesh(hornGeo, accMat);
+        h2.position.set(0.32, BALL_RADIUS - 0.05, 0);
+        h2.rotation.z = -0.45;
+        accessoryGroup.add(h1, h2);
+      } else if (skin.accessory === "leaf") {
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 10), new THREE.MeshStandardMaterial({ color: 0x22c55e }));
+        leaf.scale.set(1.5, 0.35, 0.8);
+        leaf.position.set(0.1, BALL_RADIUS + 0.08, 0);
+        leaf.rotation.z = 0.3;
+        accessoryGroup.add(leaf);
+      } else if (skin.accessory === "visor") {
+        const visor = new THREE.Mesh(
+          new THREE.BoxGeometry(0.75, 0.22, 0.3),
+          new THREE.MeshBasicMaterial({ color: 0xff007f })
+        );
+        visor.position.set(0, 0.16, -BALL_RADIUS * 0.82);
+        accessoryGroup.add(visor);
+      }
+    }
+
+    applySkinToPlayer(saveData.selectedSkin);
+
+    // Sombra projetada no chão diretamente abaixo da bolinha (ajuda muito na noção de profundidade ao pular!)
+    const dropShadowGeo = new THREE.CircleGeometry(BALL_RADIUS * 0.95, 24);
+    const dropShadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.38
+    });
+    const dropShadowMesh = new THREE.Mesh(dropShadowGeo, dropShadowMat);
+    dropShadowMesh.rotation.x = -Math.PI / 2;
+    dropShadowMesh.position.y = 0.02;
+    scene.add(dropShadowMesh);
+
+    // =========================================================================
+    // 8. PISTA INFINITA COM 3 FAIXAS, BURACOS, OBSTÁCULOS E COLETÁVEIS
+    // =========================================================================
+    const trackSegments = []; // Segmentos de chão (com suporte a buracos por faixa)
+    const obstacles = [];     // Barreiras baixas, paredes altas, armadilhas móveis
+    const collectibles = [];  // Moedas e estrelas
+    const particles = [];     // Partículas de impacto, coleta e rastro
+    const decorPillars = [];  // Pilares coloridos laterais para sensação de velocidade
+
+    const SEGMENT_LENGTH = 5.0;
+
+    // Materiais compartilhados
+    const trackMatA = new THREE.MeshStandardMaterial({ color: WORLD_THEMES[0].trackA, roughness: 0.65 });
+    const trackMatB = new THREE.MeshStandardMaterial({ color: WORLD_THEMES[0].trackB, roughness: 0.65 });
+    const railMat = new THREE.MeshStandardMaterial({ color: WORLD_THEMES[0].rail, emissive: 0x0284c7, emissiveIntensity: 0.35, roughness: 0.3 });
+    const laneDividerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 });
+    const holeRimMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+
+    /**
+     * Cria um segmento da pista com 3 faixas independentes.
+     * holesMask = [bool, bool, bool] indica se há buraco na faixa 0, 1 ou 2.
+     */
+    function spawnTrackSegment(zPos, index, holesMask = [false, false, false]) {
+      const segGroup = new THREE.Group();
+      segGroup.position.set(0, 0, zPos);
+
+      const mat = index % 2 === 0 ? trackMatA : trackMatB;
+
+      // Criar cada uma das 3 faixas separadamente (se não for buraco, cria o piso)
+      for (let lane = 0; lane < 3; lane++) {
+        if (!holesMask[lane]) {
+          const laneGeo = new THREE.BoxGeometry(LANE_WIDTH - 0.06, 1.2, SEGMENT_LENGTH);
+          const laneMesh = new THREE.Mesh(laneGeo, mat);
+          laneMesh.position.set(LANES_X[lane], -0.6, 0);
+          laneMesh.receiveShadow = true;
+          segGroup.add(laneMesh);
+        } else {
+          // Borda luminosa de alerta ao redor do buraco para leitura visual clara
+          const rimGeo = new THREE.BoxGeometry(LANE_WIDTH - 0.12, 0.08, 0.25);
+          const rimFront = new THREE.Mesh(rimGeo, holeRimMat);
+          rimFront.position.set(LANES_X[lane], -0.02, SEGMENT_LENGTH * 0.46);
+          const rimBack = new THREE.Mesh(rimGeo, holeRimMat);
+          rimBack.position.set(LANES_X[lane], -0.02, -SEGMENT_LENGTH * 0.46);
+          segGroup.add(rimFront, rimBack);
+        }
+      }
+
+      // Linhas tracejadas divisórias entre as 3 faixas
+      if (index % 2 === 0) {
+        const divGeo = new THREE.PlaneGeometry(0.12, SEGMENT_LENGTH * 0.55);
+        const div1 = new THREE.Mesh(divGeo, laneDividerMat);
+        div1.rotation.x = -Math.PI / 2;
+        div1.position.set(-LANE_WIDTH / 2, 0.015, 0);
+
+        const div2 = new THREE.Mesh(divGeo, laneDividerMat);
+        div2.rotation.x = -Math.PI / 2;
+        div2.position.set(LANE_WIDTH / 2, 0.015, 0);
+
+        segGroup.add(div1, div2);
+      }
+
+      // Trilhos laterais brilhantes
+      const railGeo = new THREE.BoxGeometry(0.32, 0.45, SEGMENT_LENGTH);
+      const leftRail = new THREE.Mesh(railGeo, railMat);
+      leftRail.position.set(-TRACK_WIDTH / 2 + 0.15, 0.15, 0);
+      const rightRail = new THREE.Mesh(railGeo, railMat);
+      rightRail.position.set(TRACK_WIDTH / 2 - 0.15, 0.15, 0);
+      segGroup.add(leftRail, rightRail);
+
+      scene.add(segGroup);
+      trackSegments.push({
+        group: segGroup,
+        z: zPos,
+        length: SEGMENT_LENGTH,
+        holes: holesMask
+      });
+
+      // Pilares decorativos externos ocasionais
+      if (index % 3 === 0) {
+        const side = index % 6 === 0 ? -1 : 1;
+        const pHeight = 3.5 + Math.random() * 5.5;
+        const pillar = new THREE.Mesh(
+          new THREE.BoxGeometry(1.1, pHeight, 1.1),
+          new THREE.MeshStandardMaterial({
+            color: index % 2 === 0 ? 0xfbbf24 : 0x38bdf8,
+            roughness: 0.4
+          })
+        );
+        pillar.position.set(side * (TRACK_WIDTH / 2 + 2.8 + Math.random() * 3), pHeight / 2 - 2, zPos);
+        scene.add(pillar);
+        decorPillars.push(pillar);
+      }
+    }
+
+    /**
+     * Cria um obstáculo 3D em uma faixa específica.
+     * Tipos:
+     * - "LOW_BARRIER": Barreira baixa (pode pular por cima OU mudar de faixa)
+     * - "HIGH_WALL": Parede alta colorida (obrigatório mudar de faixa)
+     * - "SPINNER": Armadilha giratória com espinhos (pode pular ou mudar de faixa)
+     * - "MOVER": Bloco animado que desliza entre faixas
+     */
+    function spawnObstacle(lane, zPos, type) {
+      const group = new THREE.Group();
+      group.position.set(LANES_X[lane], 0, zPos);
+
+      let width = LANE_WIDTH * 0.78;
+      let height = 1.0;
+      let depth = 0.9;
+
+      if (type === "LOW_BARRIER") {
+        height = 1.05;
+        depth = 0.85;
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(width, height, depth),
+          new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.3 })
+        );
+        mesh.position.y = height / 2;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        // Faixa branca de aviso no topo
+        const topStripe = new THREE.Mesh(
+          new THREE.BoxGeometry(width + 0.04, 0.18, depth + 0.04),
+          new THREE.MeshBasicMaterial({ color: 0xfef08a })
+        );
+        topStripe.position.y = height - 0.15;
+        group.add(mesh, topStripe);
+      } else if (type === "HIGH_WALL") {
+        height = 2.85;
+        depth = 1.15;
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(width, height, depth),
+          new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.35 })
+        );
+        mesh.position.y = height / 2;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        // Rosto mal-humorado na parede alta para charme visual
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+        const e1 = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, 0.08), eyeMat);
+        e1.position.set(-0.32, 1.85, depth / 2 + 0.02);
+        e1.rotation.z = -0.25;
+        const e2 = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, 0.08), eyeMat);
+        e2.position.set(0.32, 1.85, depth / 2 + 0.02);
+        e2.rotation.z = 0.25;
+
+        group.add(mesh, e1, e2);
+      } else if (type === "SPINNER") {
+        height = 1.15;
+        depth = 0.95;
+        const core = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.45, 0.45, 0.9, 14),
+          new THREE.MeshStandardMaterial({ color: 0xa855f7, metalness: 0.4, roughness: 0.25 })
+        );
+        core.rotation.z = Math.PI / 2;
+        core.position.y = 0.55;
+        core.castShadow = true;
+
+        const blade = new THREE.Mesh(
+          new THREE.BoxGeometry(width * 0.95, 0.24, 0.24),
+          new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0x881337 })
+        );
+        blade.position.y = 0.55;
+        group.add(core, blade);
+        group.userData.spinnerBlade = blade;
+      } else if (type === "MOVER") {
+        height = 1.35;
+        depth = 0.95;
+        const mesh = new THREE.Mesh(
+          new THREE.BoxGeometry(width * 0.85, height, depth),
+          new THREE.MeshStandardMaterial({ color: 0xec4899, roughness: 0.25, metalness: 0.2 })
+        );
+        mesh.position.y = height / 2;
+        mesh.castShadow = true;
+        group.add(mesh);
+      }
+
+      scene.add(group);
+      obstacles.push({
+        group,
+        lane,
+        type,
+        width,
+        height,
+        depth,
+        phase: Math.random() * Math.PI * 2,
+        passed: false
+      });
+    }
+
+    /**
+     * Cria uma Moeda ou Estrela coletável na pista ou no ar (para incentivar pulos).
+     */
+    function spawnCollectible(lane, zPos, yPos = 0.75, kind = "COIN") {
+      const group = new THREE.Group();
+      group.position.set(LANES_X[lane], yPos, zPos);
+
+      if (kind === "COIN") {
+        const coinMesh = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.42, 0.42, 0.14, 18),
+          new THREE.MeshStandardMaterial({
+            color: 0xfacc15,
+            emissive: 0x854d0e,
+            emissiveIntensity: 0.35,
+            metalness: 0.75,
+            roughness: 0.18
+          })
+        );
+        coinMesh.rotation.x = Math.PI / 2;
+        group.add(coinMesh);
+      } else {
+        // Estrela brilhante (octaedro duplo estilizado)
+        const starMat = new THREE.MeshStandardMaterial({
+          color: 0x38bdf8,
+          emissive: 0x0284c7,
+          emissiveIntensity: 0.65,
+          metalness: 0.3,
+          roughness: 0.1
+        });
+        const s1 = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 0), starMat);
+        const s2 = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 0), starMat);
+        s2.rotation.y = Math.PI / 4;
+        group.add(s1, s2);
+      }
+
+      scene.add(group);
+      collectibles.push({
+        group,
+        lane,
+        kind,
+        baseY: yPos,
+        phase: Math.random() * Math.PI * 2,
+        collected: false
+      });
+    }
+
+    /**
+     * Gera padrões inteligentes e sempre vencíveis nas 3 faixas.
+     */
+    let segmentCounter = 0;
+    function generateWorldAhead() {
+      // Manter segmentos de pista sempre à frente até Z = -125
+      while (state.nextTileZ > -125) {
+        segmentCounter++;
+        // No início do jogo (primeiros 35 metros) pista sempre sólida para conforto do jogador
+        let holes = [false, false, false];
+
+        if (state.mode === "PLAYING" && state.nextTileZ < -32 && segmentCounter % 5 === 0) {
+          // Escolher 1 ou 2 faixas com buraco, garantindo SEMPRE pelo menos 1 faixa livre!
+          const safeLane = Math.floor(Math.random() * 3);
+          for (let l = 0; l < 3; l++) {
+            if (l !== safeLane && Math.random() < 0.65) {
+              holes[l] = true;
+            }
+          }
+          // Se houver buraco, colocar uma moeda no ar acima do buraco como recompensa por pular!
+          for (let l = 0; l < 3; l++) {
+            if (holes[l] && Math.random() < 0.65) {
+              spawnCollectible(l, state.nextTileZ, 1.95, "COIN");
+            }
+          }
+        }
+
+        spawnTrackSegment(state.nextTileZ, segmentCounter, holes);
+        state.nextTileZ -= SEGMENT_LENGTH;
+      }
+
+      // Gerar ondas de obstáculos e coletáveis enquanto estiver jogando
+      if (state.mode !== "PLAYING") return;
+
+      while (state.nextPatternZ > -115) {
+        const z = state.nextPatternZ;
+
+        // Verificar se há buraco muito próximo desse Z para não sobrepor obstáculo impossível
+        const nearHole = trackSegments.some(
+          seg => Math.abs(seg.z - z) < 4.2 && seg.holes.some(h => h)
+        );
+
+        if (!nearHole) {
+          const patternType = Math.floor(Math.random() * 5);
+          const freeLane = Math.floor(Math.random() * 3);
+
+          if (patternType === 0) {
+            // Duas paredes altas e 1 faixa livre com fileira de moedas
+            for (let l = 0; l < 3; l++) {
+              if (l !== freeLane) {
+                spawnObstacle(l, z, "HIGH_WALL");
+              } else {
+                spawnCollectible(l, z - 2, 0.75, "COIN");
+                spawnCollectible(l, z, 0.75, "COIN");
+                spawnCollectible(l, z + 2, 0.75, "COIN");
+              }
+            }
+          } else if (patternType === 1) {
+            // Barreiras baixas em 2 ou 3 faixas (incentiva pular!) com estrela no alto
+            for (let l = 0; l < 3; l++) {
+              if (l === freeLane || Math.random() < 0.75) {
+                spawnObstacle(l, z, "LOW_BARRIER");
+              }
+            }
+            spawnCollectible(freeLane, z, 2.15, "STAR");
+          } else if (patternType === 2) {
+            // Armadilhas giratórias + parede alta
+            const wallLane = (freeLane + 1) % 3;
+            const spinLane = (freeLane + 2) % 3;
+            spawnObstacle(wallLane, z, "HIGH_WALL");
+            spawnObstacle(spinLane, z, "SPINNER");
+            spawnCollectible(spinLane, z, 2.05, "COIN");
+            spawnCollectible(freeLane, z, 0.75, "COIN");
+          } else if (patternType === 3) {
+            // Obstáculo móvel que desliza entre faixas
+            spawnObstacle(1, z, "MOVER");
+            spawnCollectible(freeLane, z - 3, 0.75, "STAR");
+          } else {
+            // Desafio misto: parede alta + barreira baixa + faixa livre
+            const lowLane = (freeLane + 1) % 3;
+            const highLane = (freeLane + 2) % 3;
+            spawnObstacle(highLane, z, "HIGH_WALL");
+            spawnObstacle(lowLane, z, "LOW_BARRIER");
+            spawnCollectible(lowLane, z, 2.05, "COIN");
+          }
+        }
+
+        // Espaçamento entre padrões ajusta conforme velocidade para manter justo e divertido
+        const gap = Math.max(15, 21 - (state.speed - state.baseSpeed) * 0.16);
+        state.nextPatternZ -= gap;
+      }
+    }
+
+    // =========================================================================
+    // 9. PARTÍCULAS E FEEDBACK VISUAL FLUTUANTE
+    // =========================================================================
+    const particleGeo = new THREE.SphereGeometry(0.14, 8, 8);
+
+    function spawnExplosionParticles(x, y, z, colorHex, count = 14) {
+      for (let i = 0; i < count; i++) {
+        const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+        const mesh = new THREE.Mesh(particleGeo, mat);
+        mesh.position.set(x, y, z);
+        scene.add(mesh);
+
+        particles.push({
+          mesh,
+          vx: (Math.random() - 0.5) * 9,
+          vy: Math.random() * 7 + 2,
+          vz: (Math.random() - 0.5) * 9,
+          life: 0.55 + Math.random() * 0.25
+        });
+      }
+    }
+
+    function showFloatingText(text, colorClass = "text-yellow-300") {
+      const el = document.createElement("div");
+      el.className = `floating-badge text-lg sm:text-xl ${colorClass}`;
+      el.style.left = "50%";
+      el.style.top = "36%";
+      el.textContent = text;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 860);
+    }
+
+    // =========================================================================
+    // 10. CONTROLES DO JOGADOR (3 FAIXAS + PULO)
+    // =========================================================================
+    function moveLeft() {
+      if (state.mode !== "PLAYING") return;
+      if (state.currentLane > 0) {
+        state.currentLane--;
+        sound.playLaneSwitch();
+        // Leve inclinação visual ao trocar de faixa
+        state.squashX = 1.15;
+        state.squashY = 0.9;
+      }
+    }
+
+    function moveRight() {
+      if (state.mode !== "PLAYING") return;
+      if (state.currentLane < 2) {
+        state.currentLane++;
+        sound.playLaneSwitch();
+        state.squashX = 1.15;
+        state.squashY = 0.9;
+      }
+    }
+
+    function triggerJump() {
+      if (state.mode !== "PLAYING") return;
+      // Jump buffer de 0.14s permite pular mesmo se tocar um pouquinho antes de tocar o chão
+      state.jumpBufferTimer = 0.14;
+    }
+
+    function executeJumpIfPossible() {
+      if (state.isGrounded && state.jumpBufferTimer > 0) {
+        state.velY = JUMP_VELOCITY;
+        state.isGrounded = false;
+        state.jumpBufferTimer = 0;
+
+        // Esticamento (Stretch) ao saltar
+        state.squashX = 0.74;
+        state.squashY = 1.34;
+        state.squashZ = 0.74;
+
+        sound.playJump();
+        spawnExplosionParticles(state.ballX, 0.15, state.ballZ, 0xffffff, 6);
+      }
+    }
+
+    // --- Controles Touch (Celular Android / iOS) & Mouse ---
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+    let pointerStartTime = 0;
+    let pointerActive = false;
+    let swipeHandled = false;
+
+    const SWIPE_THRESHOLD = 32; // pixels mínimos para reconhecer deslize lateral
+
+    function handlePointerDown(x, y) {
+      if (state.mode !== "PLAYING") return;
+      sound.init();
+      pointerStartX = x;
+      pointerStartY = y;
+      pointerStartTime = performance.now();
+      pointerActive = true;
+      swipeHandled = false;
+    }
+
+    function handlePointerMove(x, y) {
+      if (!pointerActive || swipeHandled || state.mode !== "PLAYING") return;
+      const dx = x - pointerStartX;
+      const dy = y - pointerStartY;
+
+      // Se deslizar horizontalmente mais do que verticalmente e atingir o limiar
+      if (Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * 0.85) {
+        if (dx < 0) {
+          moveLeft();
+        } else {
+          moveRight();
+        }
+        swipeHandled = true;
+      }
+    }
+
+    function handlePointerUp(x, y) {
+      if (!pointerActive) return;
+      pointerActive = false;
+
+      if (state.mode !== "PLAYING") return;
+
+      // Se não houve deslize lateral, um toque rápido ou deslize para cima faz a bolinha PULAR
+      if (!swipeHandled) {
+        const dx = x - pointerStartX;
+        const dy = y - pointerStartY;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < SWIPE_THRESHOLD || dy < -20) {
+          triggerJump();
+        }
+      }
+    }
+
+    canvas.addEventListener("touchstart", (e) => {
+      if (e.touches.length > 0) {
+        const t = e.touches[0];
+        handlePointerDown(t.clientX, t.clientY);
+      }
+    }, { passive: true });
+
+    canvas.addEventListener("touchmove", (e) => {
+      if (e.touches.length > 0) {
+        const t = e.touches[0];
+        handlePointerMove(t.clientX, t.clientY);
+      }
+    }, { passive: true });
+
+    canvas.addEventListener("touchend", (e) => {
+      if (e.changedTouches.length > 0) {
+        const t = e.changedTouches[0];
+        handlePointerUp(t.clientX, t.clientY);
+      }
+    }, { passive: true });
+
+    // Suporte também para Mouse (arrastar esquerda/direita ou clicar para pular)
+    canvas.addEventListener("mousedown", (e) => {
+      handlePointerDown(e.clientX, e.clientY);
+    });
+    window.addEventListener("mousemove", (e) => {
+      handlePointerMove(e.clientX, e.clientY);
+    });
+    window.addEventListener("mouseup", (e) => {
+      handlePointerUp(e.clientX, e.clientY);
+    });
+
+    // Suporte para Teclado (Setas, WASD, Espaço)
+    window.addEventListener("keydown", (e) => {
+      if (e.repeat) return;
+      if (state.mode === "PLAYING") {
+        if (e.code === "ArrowLeft" || e.code === "KeyA") {
+          moveLeft();
+        } else if (e.code === "ArrowRight" || e.code === "KeyD") {
+          moveRight();
+        } else if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "Space") {
+          e.preventDefault();
+          triggerJump();
+        }
+      } else if (state.mode === "MENU" && (e.code === "Space" || e.code === "Enter")) {
+        startNewGame();
+      } else if (state.mode === "GAMEOVER" && (e.code === "Space" || e.code === "Enter")) {
+        startNewGame();
+      }
+    });
+
+    // =========================================================================
+    // 11. GERENCIAMENTO DE PARTIDA (INICIAR, REINICIAR, GAME OVER)
+    // =========================================================================
+    function clearWorldEntities() {
+      trackSegments.forEach(s => scene.remove(s.group));
+      trackSegments.length = 0;
+
+      obstacles.forEach(o => scene.remove(o.group));
+      obstacles.length = 0;
+
+      collectibles.forEach(c => scene.remove(c.group));
+      collectibles.length = 0;
+
+      particles.forEach(p => scene.remove(p.mesh));
+      particles.length = 0;
+
+      decorPillars.forEach(p => scene.remove(p));
+      decorPillars.length = 0;
+    }
+
+    function resetTrackForMenuOrPlay() {
+      clearWorldEntities();
+      segmentCounter = 0;
+      state.nextTileZ = 15;
+      state.nextPatternZ = -28;
+
+      state.currentLane = 1; // Sempre começa na faixa central
+      state.ballX = LANES_X[1];
+      state.ballY = BALL_RADIUS;
+      state.ballZ = 0;
+      state.velY = 0;
+      state.isGrounded = true;
+      state.jumpBufferTimer = 0;
+      state.squashX = 1;
+      state.squashY = 1;
+      state.squashZ = 1;
+
+      generateWorldAhead();
+    }
+
+    function startNewGame() {
+      sound.playButton();
+      state.mode = "PLAYING";
+      state.speed = state.baseSpeed;
+      state.distance = 0;
+      state.score = 0;
+      state.runCoins = 0;
+      state.combo = 1;
+      state.maxCombo = 1;
+      state.comboTimer = 0;
+      state.themeIndex = 0;
+
+      applyWorldTheme(0);
+      resetTrackForMenuOrPlay();
+
+      // Atualizar telas
+      document.getElementById("screen-menu").classList.add("hidden");
+      document.getElementById("screen-skins").classList.add("hidden");
+      document.getElementById("screen-gameover").classList.add("hidden");
+      document.getElementById("hud-left-menu").classList.add("hidden");
+      document.getElementById("hud-left-playing").classList.remove("hidden");
+      document.getElementById("hud-left-playing").classList.add("flex");
+      document.getElementById("combo-container").classList.add("hidden");
+
+      updateHUD();
+    }
+
+    function triggerGameOver(reasonText = "Você bateu em um obstáculo!") {
+      if (state.mode === "GAMEOVER") return;
+      state.mode = "GAMEOVER";
+      sound.playGameOver();
+
+      const finalScore = Math.floor(state.score);
+      const isNewRecord = finalScore > saveData.highScore;
+      if (isNewRecord) {
+        saveData.highScore = finalScore;
+      }
+      saveData.coins += state.runCoins;
+      persistSaveData();
+
+      // Atualizar UI de Game Over
+      document.getElementById("gameover-reason").textContent = reasonText;
+      document.getElementById("go-score").textContent = finalScore;
+      document.getElementById("go-highscore").textContent = saveData.highScore;
+      document.getElementById("go-coins").textContent = `+${state.runCoins}`;
+      document.getElementById("go-combo").textContent = `x${state.maxCombo}`;
+
+      const recordBadge = document.getElementById("new-record-badge");
+      if (isNewRecord && finalScore > 0) {
+        recordBadge.classList.remove("hidden");
+      } else {
+        recordBadge.classList.add("hidden");
+      }
+
+      document.getElementById("screen-gameover").classList.remove("hidden");
+      updateHUD();
+    }
+
+    function returnToMenu() {
+      sound.playButton();
+      state.mode = "MENU";
+      applyWorldTheme(0);
+      resetTrackForMenuOrPlay();
+
+      document.getElementById("screen-gameover").classList.add("hidden");
+      document.getElementById("screen-skins").classList.add("hidden");
+      document.getElementById("screen-menu").classList.remove("hidden");
+      document.getElementById("hud-left-playing").classList.add("hidden");
+      document.getElementById("hud-left-menu").classList.remove("hidden");
+
+      updateHUD();
+    }
+
+    function applyWorldTheme(index) {
+      const theme = WORLD_THEMES[index % WORLD_THEMES.length];
+      scene.background.setHex(theme.sky);
+      scene.fog.color.setHex(theme.fog);
+      trackMatA.color.setHex(theme.trackA);
+      trackMatB.color.setHex(theme.trackB);
+      railMat.color.setHex(theme.rail);
+    }
+
+    // =========================================================================
+    // 12. INTERFACE (HUD E LOJA DE 20 BOLINHAS)
+    // =========================================================================
+    function updateHUD() {
+      document.getElementById("menu-highscore").textContent = saveData.highScore;
+      document.getElementById("hud-score").textContent = Math.floor(state.score);
+      const totalDisplayedCoins = state.mode === "PLAYING" ? saveData.coins + state.runCoins : saveData.coins;
+      document.getElementById("hud-coins").textContent = totalDisplayedCoins;
+      document.getElementById("unlocked-count").textContent = saveData.unlockedSkins.length;
+
+      const comboContainer = document.getElementById("combo-container");
+      if (state.combo > 1 && state.comboTimer > 0) {
+        comboContainer.classList.remove("hidden");
+        document.getElementById("hud-combo-text").textContent = `COMBO x${state.combo}`;
+        const pct = Math.max(0, Math.min(100, (state.comboTimer / state.comboDuration) * 100));
+        document.getElementById("hud-combo-bar").style.width = `${pct}%`;
+      } else {
+        comboContainer.classList.add("hidden");
+      }
+    }
+
+    function renderSkinsShop() {
+      const grid = document.getElementById("skins-grid");
+      document.getElementById("shop-coins").textContent = saveData.coins;
+      grid.innerHTML = "";
+
+      SKINS_DATA.forEach((skin) => {
+        const isUnlocked = saveData.unlockedSkins.includes(skin.id);
+        const isSelected = saveData.selectedSkin === skin.id;
+
+        const card = document.createElement("button");
+        card.className = `rounded-2xl p-3 flex flex-col items-center justify-between border-2 transition-transform active:scale-95 ${
+          isSelected
+            ? "bg-indigo-600/60 border-emerald-400 shadow-lg shadow-emerald-500/20"
+            : isUnlocked
+            ? "bg-slate-800/90 border-white/25 hover:border-white/50"
+            : "bg-slate-900/80 border-white/10"
+        }`;
+
+        // Esfera visual em CSS representando a skin
+        const preview = document.createElement("div");
+        preview.className = "w-14 h-14 rounded-full mb-2 relative flex items-center justify-center shadow-inner border-2 border-white/30";
+        preview.style.background = `radial-gradient(circle at 30% 30%, ${skin.accent}, ${skin.color})`;
+        preview.innerHTML = `
+          <div class="flex gap-1.5 -mt-1">
+            <span class="w-2.5 h-3 bg-white rounded-full flex items-center justify-center"><span class="w-1 h-1.5 bg-slate-950 rounded-full"></span></span>
+            <span class="w-2.5 h-3 bg-white rounded-full flex items-center justify-center"><span class="w-1 h-1.5 bg-slate-950 rounded-full"></span></span>
+          </div>
+        `;
+
+        const title = document.createElement("div");
+        title.className = "text-white font-bold text-xs sm:text-sm truncate w-full text-center";
+        title.textContent = skin.name;
+
+        const status = document.createElement("div");
+        status.className = "mt-1.5 text-[11px] font-bold px-2.5 py-0.5 rounded-full w-full text-center";
+
+        if (isSelected) {
+          status.className += " bg-emerald-500 text-slate-950";
+          status.textContent = "EQUIPADA";
+        } else if (isUnlocked) {
+          status.className += " bg-white/15 text-white";
+          status.textContent = "SELECIONAR";
+        } else {
+          const canAfford = saveData.coins >= skin.price;
+          status.className += canAfford
+            ? " bg-amber-400 text-slate-950"
+            : " bg-slate-800 text-amber-300/80 border border-amber-400/30";
+          status.textContent = `$ ${skin.price}`;
+        }
+
+        card.appendChild(preview);
+        card.appendChild(title);
+        card.appendChild(status);
+
+        card.addEventListener("click", () => {
+          const feedback = document.getElementById("shop-feedback");
+          if (isUnlocked) {
+            saveData.selectedSkin = skin.id;
+            persistSaveData();
+            applySkinToPlayer(skin.id);
+            sound.playButton();
+            feedback.textContent = `Bolinha "${skin.name}" equipada!`;
+            renderSkinsShop();
+          } else if (saveData.coins >= skin.price) {
+            saveData.coins -= skin.price;
+            saveData.unlockedSkins.push(skin.id);
+            saveData.selectedSkin = skin.id;
+            persistSaveData();
+            applySkinToPlayer(skin.id);
+            sound.playUnlock();
+            feedback.textContent = `🎉 Você desbloqueou "${skin.name}"!`;
+            updateHUD();
+            renderSkinsShop();
+          } else {
+            sound.playTone(180, 140, 0.12, "sawtooth", 0.14);
+            feedback.textContent = `Faltam ${skin.price - saveData.coins} moedas para "${skin.name}"!`;
+          }
+        });
+
+        grid.appendChild(card);
+      });
+    }
+
+    // Listeners dos botões da interface
+    document.getElementById("btn-play").addEventListener("click", startNewGame);
+    document.getElementById("btn-restart").addEventListener("click", startNewGame);
+    document.getElementById("btn-go-menu").addEventListener("click", returnToMenu);
+
+    document.getElementById("btn-open-skins").addEventListener("click", () => {
+      sound.playButton();
+      document.getElementById("shop-feedback").textContent = "";
+      renderSkinsShop();
+      document.getElementById("screen-skins").classList.remove("hidden");
+    });
+
+    document.getElementById("btn-close-skins").addEventListener("click", () => {
+      sound.playButton();
+      document.getElementById("screen-skins").classList.add("hidden");
+      updateHUD();
+    });
+
+    const btnSound = document.getElementById("btn-sound");
+    btnSound.textContent = saveData.soundEnabled ? "🔊" : "🔇";
+    btnSound.addEventListener("click", () => {
+      saveData.soundEnabled = !saveData.soundEnabled;
+      persistSaveData();
+      btnSound.textContent = saveData.soundEnabled ? "🔊" : "🔇";
+      if (saveData.soundEnabled) sound.playButton();
+    });
+
+    // =========================================================================
+    // 13. LOOP PRINCIPAL DE SIMULAÇÃO, COLISÕES E RENDERIZAÇÃO
+    // =========================================================================
+    function isOverHole(lane, zPos) {
+      for (let i = 0; i < trackSegments.length; i++) {
+        const seg = trackSegments[i];
+        const halfLen = seg.length * 0.42;
+        if (Math.abs(zPos - seg.z) <= halfLen) {
+          return seg.holes[lane] === true;
+        }
+      }
+      return false;
+    }
+
+    let lastTime = performance.now();
+
+    function updateSimulation(dt) {
+      // Piscar os olhos da bolinha periodicamente
+      state.blinkTimer -= dt;
+      if (state.blinkTimer <= 0) {
+        if (!state.isBlinking) {
+          state.isBlinking = true;
+          state.blinkTimer = 0.12;
+          leftEye.container.scale.y = 0.1;
+          rightEye.container.scale.y = 0.1;
+        } else {
+          state.isBlinking = false;
+          state.blinkTimer = 2.2 + Math.random() * 2.5;
+          leftEye.container.scale.y = 1;
+          rightEye.container.scale.y = 1;
+        }
+      }
+
+      // Recuperar suavemente squash & stretch
+      state.squashX += (1 - state.squashX) * Math.min(1, dt * 14);
+      state.squashY += (1 - state.squashY) * Math.min(1, dt * 14);
+      state.squashZ += (1 - state.squashZ) * Math.min(1, dt * 14);
+
+      if (state.mode === "MENU") {
+        // Animação viva no menu inicial: pista deslizando e bolinha quicando feliz no centro
+        const demoSpeed = 12;
+        trackSegments.forEach(s => { s.z += demoSpeed * dt; s.group.position.z = s.z; });
+        decorPillars.forEach(p => { p.position.z += demoSpeed * dt; });
+        state.nextTileZ += demoSpeed * dt;
+        generateWorldAhead();
+
+        // Limpar segmentos que ficaram para trás
+        while (trackSegments.length > 0 && trackSegments[0].z > 22) {
+          scene.remove(trackSegments[0].group);
+          trackSegments.shift();
+        }
+
+        const bounce = Math.abs(Math.sin(performance.now() * 0.0045)) * 1.1;
+        state.ballX = 0;
+        state.ballY = BALL_RADIUS + bounce;
+        state.rollAngle -= demoSpeed * dt * 1.4;
+
+        playerGroup.position.set(state.ballX, state.ballY, state.ballZ);
+        ballVisualGroup.scale.set(state.squashX, state.squashY, state.squashZ);
+        ballMesh.rotation.x = state.rollAngle;
+        stripeMesh.rotation.x = state.rollAngle;
+        dropShadowMesh.position.set(0, 0.02, 0);
+        dropShadowMesh.scale.setScalar(Math.max(0.45, 1 - bounce * 0.3));
+        return;
+      }
+
+      if (state.mode === "FALLING") {
+        // Animação dramática de queda no buraco antes de abrir Game Over
+        state.velY += GRAVITY * 1.2 * dt;
+        state.ballY += state.velY * dt;
+        state.ballZ -= 4 * dt;
+        playerGroup.position.set(state.ballX, state.ballY, state.ballZ);
+        ballVisualGroup.rotation.x -= 8 * dt;
+        dropShadowMesh.visible = false;
+
+        if (state.ballY < -6.5) {
+          triggerGameOver("Você caiu em um buraco!");
+        }
+        return;
+      }
+
+      if (state.mode !== "PLAYING") return;
+
+      // -----------------------------------------------------------------------
+      // LÓGICA ATIVA DURANTE A PARTIDA ("PLAYING")
+      // -----------------------------------------------------------------------
+      // 1. Aumento gradual de velocidade e pontuação por distância
+      state.speed = Math.min(state.maxSpeed, state.baseSpeed + state.distance * 0.024);
+      const stepZ = state.speed * dt;
+      state.distance += stepZ;
+      state.score += stepZ * 0.65 * state.combo;
+
+      // Mudança dinâmica de paleta de cores a cada 350 metros
+      const targetTheme = Math.floor(state.distance / 350) % WORLD_THEMES.length;
+      if (targetTheme !== state.themeIndex) {
+        state.themeIndex = targetTheme;
+        applyWorldTheme(state.themeIndex);
+      }
+
+      // Atualizar temporizador do Combo
+      if (state.combo > 1) {
+        state.comboTimer -= dt;
+        if (state.comboTimer <= 0) {
+          state.combo = 1;
+          state.comboTimer = 0;
+        }
+      }
+
+      // 2. Movimento lateral suave e preciso EXCLUSIVAMENTE para a faixa escolhida
+      const targetX = LANES_X[state.currentLane];
+      const prevX = state.ballX;
+      state.ballX += (targetX - state.ballX) * Math.min(1, dt * 18);
+      const lateralVel = (state.ballX - prevX) / Math.max(dt, 0.001);
+
+      // Inclinação visual (tilt) e olhar das pupilas na direção da troca de faixa
+      ballVisualGroup.rotation.z = -lateralVel * 0.028;
+      leftEye.pupil.position.x = THREE.MathUtils.clamp(lateralVel * 0.004, -0.045, 0.045);
+      rightEye.pupil.position.x = THREE.MathUtils.clamp(lateralVel * 0.004, -0.045, 0.045);
+
+      // 3. Física vertical (Pulo e Gravidade)
+      if (state.jumpBufferTimer > 0) {
+        state.jumpBufferTimer -= dt;
+      }
+      executeJumpIfPossible();
+
+      if (!state.isGrounded) {
+        state.velY += GRAVITY * dt;
+        state.ballY += state.velY * dt;
+
+        // Verificar se aterrissou
+        if (state.ballY <= BALL_RADIUS) {
+          // Verificar se há um buraco exatamente sob a faixa atual ao tentar aterrissar!
+          if (isOverHole(state.currentLane, state.ballZ)) {
+            state.mode = "FALLING";
+            state.velY = -6;
+            return;
+          }
+
+          state.ballY = BALL_RADIUS;
+          state.velY = 0;
+          state.isGrounded = true;
+
+          // Achatamento (Squash) na aterrissagem
+          state.squashX = 1.28;
+          state.squashY = 0.72;
+          state.squashZ = 1.28;
+          spawnExplosionParticles(state.ballX, 0.1, state.ballZ, 0x94a3b8, 5);
+        }
+      } else {
+        // Se está correndo no chão e passa por cima de um buraco sem ter pulado -> CAI!
+        if (isOverHole(state.currentLane, state.ballZ)) {
+          state.mode = "FALLING";
+          state.velY = -5;
+          return;
+        }
+      }
+
+      // Rotação contínua da bolinha correndo para frente
+      state.rollAngle -= stepZ * 1.45;
+      playerGroup.position.set(state.ballX, state.ballY, state.ballZ);
+      ballVisualGroup.scale.set(state.squashX, state.squashY, state.squashZ);
+      ballMesh.rotation.x = state.rollAngle;
+      stripeMesh.rotation.x = state.rollAngle;
+
+      // Atualizar sombra no chão (oculta quando sobre buraco)
+      const overHoleNow = isOverHole(state.currentLane, state.ballZ);
+      dropShadowMesh.visible = !overHoleNow;
+      dropShadowMesh.position.set(state.ballX, 0.02, state.ballZ);
+      const heightAboveGround = Math.max(0, state.ballY - BALL_RADIUS);
+      dropShadowMesh.scale.setScalar(Math.max(0.35, 1 - heightAboveGround * 0.22));
+
+      // Câmera segue suavemente a faixa do jogador para excelente visibilidade
+      camera.position.x += (state.ballX * 0.42 - camera.position.x) * Math.min(1, dt * 8);
+      camera.position.y += (5.3 + heightAboveGround * 0.25 - camera.position.y) * Math.min(1, dt * 6);
+      camera.lookAt(state.ballX * 0.25, 1.1, -8);
+
+      // 4. Mover pista, obstáculos e coletáveis em direção ao jogador (+Z)
+      state.nextTileZ += stepZ;
+      state.nextPatternZ += stepZ;
+
+      for (let i = trackSegments.length - 1; i >= 0; i--) {
+        const seg = trackSegments[i];
+        seg.z += stepZ;
+        seg.group.position.z = seg.z;
+        if (seg.z > 22) {
+          scene.remove(seg.group);
+          trackSegments.splice(i, 1);
+        }
+      }
+
+      for (let i = decorPillars.length - 1; i >= 0; i--) {
+        decorPillars[i].position.z += stepZ;
+        if (decorPillars[i].position.z > 20) {
+          scene.remove(decorPillars[i]);
+          decorPillars.splice(i, 1);
+        }
+      }
+
+      // 5. Atualizar e verificar colisão com Obstáculos
+      const playerBottom = state.ballY - BALL_RADIUS * 0.85;
+      const playerTop = state.ballY + BALL_RADIUS * 0.85;
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.group.position.z += stepZ;
+        obs.phase += dt * 4.5;
+
+        // Animações próprias de cada obstáculo
+        if (obs.type === "SPINNER" && obs.group.userData.spinnerBlade) {
+          obs.group.userData.spinnerBlade.rotation.y += dt * 7.5;
+        } else if (obs.type === "MOVER") {
+          // Oscila suavemente entre esquerda e direita
+          obs.group.position.x = Math.sin(obs.phase * 0.65) * LANE_WIDTH;
+        }
+
+        const obsZ = obs.group.position.z;
+        const obsX = obs.group.position.x;
+
+        // Pontuação extra ao superar um obstáculo com sucesso
+        if (!obs.passed && obsZ > state.ballZ + obs.depth * 0.5 + BALL_RADIUS) {
+          obs.passed = true;
+          state.score += 10 * state.combo;
+        }
+
+        // Checagem de colisão AABB tolerante e justa
+        const hitZ = Math.abs(obsZ - state.ballZ) < (obs.depth * 0.44 + BALL_RADIUS * 0.72);
+        const hitX = Math.abs(obsX - state.ballX) < (obs.width * 0.42 + BALL_RADIUS * 0.68);
+        const hitY = playerBottom < (obs.height - 0.12) && playerTop > 0.05;
+
+        if (hitZ && hitX && hitY) {
+          spawnExplosionParticles(state.ballX, state.ballY, state.ballZ, 0xff3b5c, 24);
+          triggerGameOver("Você bateu em um obstáculo!");
+          return;
+        }
+
+        if (obsZ > 18) {
+          scene.remove(obs.group);
+          obstacles.splice(i, 1);
+        }
+      }
+
+      // 6. Atualizar e verificar coleta de Moedas e Estrelas
+      for (let i = collectibles.length - 1; i >= 0; i--) {
+        const col = collectibles[i];
+        col.group.position.z += stepZ;
+        col.phase += dt * 4.2;
+        col.group.rotation.y += dt * 3.5;
+        col.group.position.y = col.baseY + Math.sin(col.phase) * 0.14;
+
+        const cz = col.group.position.z;
+        const cx = col.group.position.x;
+        const cy = col.group.position.y;
+
+        const dist = Math.hypot(cx - state.ballX, cy - state.ballY, cz - state.ballZ);
+        if (!col.collected && dist < BALL_RADIUS + 0.68) {
+          col.collected = true;
+          scene.remove(col.group);
+          collectibles.splice(i, 1);
+
+          if (col.kind === "COIN") {
+            state.runCoins += 1;
+            state.score += 15 * state.combo;
+            sound.playCoin();
+            spawnExplosionParticles(cx, cy, cz, 0xfacc15, 8);
+          } else {
+            // Estrela aumenta o multiplicador de Combo!
+            state.combo = Math.min(10, state.combo + 1);
+            state.maxCombo = Math.max(state.maxCombo, state.combo);
+            state.comboTimer = state.comboDuration;
+            state.score += 50 * state.combo;
+            sound.playStar(state.combo);
+            spawnExplosionParticles(cx, cy, cz, 0x38bdf8, 14);
+            showFloatingText(`COMBO x${state.combo}!`, "text-cyan-300");
+          }
+          continue;
+        }
+
+        if (cz > 18) {
+          scene.remove(col.group);
+          collectibles.splice(i, 1);
+        }
+      }
+
+      // 7. Atualizar partículas 3D
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.life -= dt;
+        p.vy += GRAVITY * 0.45 * dt;
+        p.mesh.position.x += p.vx * dt;
+        p.mesh.position.y += p.vy * dt;
+        p.mesh.position.z += p.vz * dt;
+        p.mesh.scale.setScalar(Math.max(0.01, p.life * 1.4));
+
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          particles.splice(i, 1);
+        }
+      }
+
+      generateWorldAhead();
+      updateHUD();
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.05, (now - lastTime) / 1000);
+      lastTime = now;
+
+      updateSimulation(dt);
+      renderer.render(scene, camera);
+    }
+
+    // Responsividade ao redimensionar tela ou girar celular
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Inicializar cenário no onload
+    window.onload = function () {
+      resetTrackForMenuOrPlay();
+      updateHUD();
+      lastTime = performance.now();
+      requestAnimationFrame(animate);
+    };
+  </script>
+</body>
+</html>
+```
+
+  
